@@ -1,0 +1,6 @@
+# dsh-prompt-manager bundle patch
+#
+# One Host row; the visible UI lives in ./client.js (dsh.client declaration).
+- insert:
+    - id: prompt-manager
+      name: '@local/dsh-prompt-manager'
