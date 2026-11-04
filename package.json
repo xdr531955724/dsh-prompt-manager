@@ -2,9 +2,20 @@
   "name": "@local/dsh-prompt-manager",
   "version": "1.3.0",
   "private": true,
-  "description": "DSH 桌面端提示词管理器：一键把收藏的提示词写进输入框，并可用大模型优化输入框里正在写的提示词",
+  "description": "DSH（DeepSeek Harness）提示词管理器：按标签分组管理提示词，一键写进输入框；并用大模型优化输入框里正在写的东西",
   "type": "module",
   "icon": "./icon.svg",
+  "dshTitle": {
+    "zh": "提示词管理器",
+    "en": "Prompt Manager"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "prompt-manager",
+    "prompt-library",
+    "tags"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
