@@ -10,9 +10,11 @@
 
 - **一键写入**：点列表条目 → 通过 composer 的 `inputActions` 写入草稿区（不碰编辑器 DOM）。
 - **两种写入方式**（面板底部切换，跟随保存）：`插入`（光标处写入，输入框为空即整段写入）/ `替换`（覆盖输入框全部内容）。
-- **管理**：新建 / 编辑 / 删除（二次确认）/「恢复默认」/「清空输入框」。
-- **搜索**：按名称与内容过滤。
-- **持久化**：本机 `localStorage`（键 `dsh.prompt-manager.v1`）。首次安装预置 4 条。
+- **收藏**：每行左侧的 ☆ 一键收藏 / 取消收藏；顶部 `全部 / 收藏` 两个页签各带条数，同一话题写很多条时，常用的收起来就不再翻整个列表。
+- **键盘操作**：搜索框里 `↑ / ↓` 移动高亮，`Enter` 直接把该条写进输入框（手不离键盘）。
+- **管理**：新建 / 编辑（收藏状态与顺序保留）/ 删除（二次确认，再点一次确认）/「清空输入框」。
+- **搜索**：按名称与内容过滤，与当前页签叠加生效。
+- **持久化**：本机 `localStorage`（键 `dsh.prompt-manager.v1`），收藏标记一并保存。首次安装预置 4 条。
 
 ### 提示词优化（工具栏「优化」按钮）
 
@@ -85,6 +87,9 @@ PM_MODEL=glm-5.3-flash node dev/host-harness.mjs '换模型对比'
 
 # 列某个 OpenAI 兼容中转/服务商能用的模型 id
 node dev/list-relay-models.mjs <凭据名> https://your-endpoint/v1
+
+# UI 半边的无浏览器自测：假 hooks 跑一遍面板/页签/星标/表单，不需要 React
+node dev/render-check.mjs
 ```
 
 `dev/host-harness.mjs` 会读写 `$DSH_HOME/prompt-manager.json`；想隔离测试就把 `DSH_HOME` 指到一个临时目录。
@@ -119,7 +124,7 @@ MIT，见 [LICENSE](LICENSE)。
 
 A DSH (DeepSeek Harness) bundle that adds two controls to the composer tool row:
 
-1. **Prompt library** (`提示词`): a click-to-insert list of saved prompts, with create/edit/delete/search, persisted in the page's `localStorage`.
+1. **Prompt library** (`提示词`): a click-to-insert list of saved prompts, with a starred view for the ones you keep reusing, create/edit/delete, "save as copy", search and ↑↓/Enter keyboard selection — persisted in the page's `localStorage`.
 2. **Prompt optimizer** (`优化`): rewrites whatever is in the composer through any OpenAI-compatible `/chat/completions` endpoint and, after your confirmation (or automatically), replaces the draft. Host-side routes keep the API key out of the browser; the key is read from the plugin config, an environment variable, or `~/.dsh/.credentials.yaml`.
 
 Install with the built-in plugin manager (`install_bundle` pointing at the cloned directory). The client half hot-reloads; the host half loads on the next DSH start. MIT licensed.

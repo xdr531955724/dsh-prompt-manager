@@ -36,6 +36,12 @@ window.__ModuleLoader__.load({
       'panel.new': '新建',
       'panel.empty': '还没有提示词，点「新建」添加一条。',
       'panel.noMatch': '没有匹配的提示词。',
+      'panel.tabAll': '全部',
+      'panel.tabFav': '收藏',
+      'panel.emptyFav': '还没有收藏的提示词。点条目左侧的 ☆ 收藏，常用的就不用每次翻。',
+      'panel.searchHint': '搜索名称和内容；↑↓ 选择，Enter 写入输入框',
+      'action.favorite': '收藏',
+      'action.unfavorite': '取消收藏',
       'panel.mode': '点击后',
       'panel.modeInsert': '插入',
       'panel.modeReplace': '替换',
@@ -51,9 +57,10 @@ window.__ModuleLoader__.load({
       'form.text': '内容',
       'form.textPlaceholder': '点击该条目时写入输入框的文本',
       'form.save': '保存',
+      'form.duplicate': '另存副本',
+      'form.copySuffix': ' 副本',
       'form.cancel': '取消',
       'form.invalid': '名称和内容都不能为空。',
-      'panel.restore': '恢复默认',
       'panel.clear': '清空输入框',
       'opt.trigger': '优化',
       'opt.triggerTitle': '用 AI 把输入框里的提示词改写得更清晰',
@@ -100,6 +107,12 @@ window.__ModuleLoader__.load({
       'panel.new': 'New',
       'panel.empty': 'No prompts yet — click "New" to add one.',
       'panel.noMatch': 'No matching prompt.',
+      'panel.tabAll': 'All',
+      'panel.tabFav': 'Starred',
+      'panel.emptyFav': 'No starred prompts yet — tap the ☆ on a row to pin the ones you keep reaching for.',
+      'panel.searchHint': 'Search names and text; ↑↓ to move, Enter to write it into the composer',
+      'action.favorite': 'Star',
+      'action.unfavorite': 'Unstar',
       'panel.mode': 'Click',
       'panel.modeInsert': 'Insert',
       'panel.modeReplace': 'Replace',
@@ -115,9 +128,10 @@ window.__ModuleLoader__.load({
       'form.text': 'Text',
       'form.textPlaceholder': 'What gets written into the composer',
       'form.save': 'Save',
+      'form.duplicate': 'Save as copy',
+      'form.copySuffix': ' copy',
       'form.cancel': 'Cancel',
       'form.invalid': 'Name and text are both required.',
-      'panel.restore': 'Restore defaults',
       'panel.clear': 'Clear draft',
       'opt.trigger': 'Optimize',
       'opt.triggerTitle': 'Rewrite the composer draft into a clearer prompt',
@@ -201,7 +215,7 @@ window.__ModuleLoader__.load({
       const text = raw.text;
       const title = typeof raw.title === 'string' && raw.title.trim() !== '' ? raw.title.trim() : firstLine(text) || '未命名';
       const id = typeof raw.id === 'string' && raw.id !== '' ? raw.id : newId();
-      return { id, title, text };
+      return { id, title, text, fav: raw.fav === true };
     }
 
     /** @returns the stored library document, or null when this device has none. */
@@ -295,6 +309,17 @@ window.__ModuleLoader__.load({
 .dsh-pm-row-line select{flex:1 1 auto;min-width:0}
 .dsh-pm-row-line input[type="checkbox"]{width:14px;height:14px;accent-color:var(--dsw-alias-brand-primary)}
 .dsh-pm-hint{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dsh-pm-tabs{display:flex;align-items:center;gap:4px;padding:0 12px 2px}
+.dsh-pm-tab{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:18px;cursor:pointer}
+.dsh-pm-tab:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14));color:var(--dsw-alias-label-primary)}
+.dsh-pm-tab[data-on="true"]{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.14));color:var(--dsw-alias-label-primary);font-weight:600}
+.dsh-pm-tab .dsh-pm-count{font-weight:400}
+.dsh-pm-star{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));cursor:pointer;opacity:.38;transition:opacity .1s ease,color .1s ease}
+.dsh-pm-star:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.2))}
+.dsh-pm-row:hover .dsh-pm-star,.dsh-pm-star:focus-visible{opacity:1}
+.dsh-pm-star[data-on="true"]{opacity:1;color:var(--dsw-alias-brand-primary)}
+.dsh-pm-star-icon{width:14px;height:14px;display:block}
+.dsh-pm-row[data-active="true"]{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
 `;
 
     /** Inline bookmark/chat glyph for the trigger button. */
@@ -316,6 +341,23 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** Inline star glyph for the per-row favourite toggle. */
+    function StarIcon(props) {
+      return h(
+        'svg',
+        {
+          className: 'dsh-pm-star-icon',
+          viewBox: '0 0 24 24',
+          fill: props.filled ? 'currentColor' : 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.6,
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+        },
+        h('path', { d: 'M12 4.2l2.35 4.9 5.35.72-3.9 3.72.98 5.3L12 16.3l-4.78 2.54.98-5.3L4.3 9.82l5.35-.72z' }),
+      );
+    }
+
     /**
      * The composer tool-row control and its popover.
      * @param props - standard Session props (useInput, inputActions) plus the
@@ -330,6 +372,8 @@ window.__ModuleLoader__.load({
       const [library, setLibrary] = React.useState(initialDocument);
       const [open, setOpen] = React.useState(false);
       const [query, setQuery] = React.useState('');
+      const [tab, setTab] = React.useState('all');
+      const [active, setActive] = React.useState(0);
       const [editing, setEditing] = React.useState(null);
       const [confirmId, setConfirmId] = React.useState(null);
       const [position, setPosition] = React.useState(null);
@@ -389,19 +433,42 @@ window.__ModuleLoader__.load({
         if (open && editing === null && searchRef.current !== null) searchRef.current.focus();
       }, [open, editing]);
 
+      /** A new query or tab makes the previously highlighted row meaningless. */
+      React.useEffect(() => {
+        setActive(0);
+      }, [query, tab]);
+
+      /** Keyboard navigation must not walk the highlight out of the visible list. */
+      React.useEffect(() => {
+        const panel = panelRef.current;
+        if (panel === null) return;
+        const node = panel.querySelector('[data-active="true"]');
+        if (node !== null && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest' });
+      }, [open, active]);
+
       const rows = React.useMemo(() => {
         const needle = query.trim().toLowerCase();
-        if (needle === '') return library.prompts;
-        return library.prompts.filter(
+        const scoped = tab === 'fav' ? library.prompts.filter((prompt) => prompt.fav === true) : library.prompts;
+        if (needle === '') return scoped;
+        return scoped.filter(
           (prompt) => prompt.title.toLowerCase().includes(needle) || prompt.text.toLowerCase().includes(needle),
         );
-      }, [library.prompts, query]);
+      }, [library.prompts, query, tab]);
+
+      /** Total star count, shown on the 收藏 tab regardless of the current filter. */
+      const favCount = React.useMemo(
+        () => library.prompts.filter((prompt) => prompt.fav === true).length,
+        [library.prompts],
+      );
 
       const toggle = () => {
         setOpen((value) => !value);
         setEditing(null);
         setConfirmId(null);
-        if (open) setQuery('');
+        if (open) {
+          setQuery('');
+          setActive(0);
+        }
       };
 
       /** Write one prompt into the composer through the slot's input face. */
@@ -418,6 +485,7 @@ window.__ModuleLoader__.load({
         setEditing(null);
         setConfirmId(null);
         setQuery('');
+        setActive(0);
       };
 
       const savePrompt = (form) => {
@@ -426,11 +494,11 @@ window.__ModuleLoader__.load({
         if (title === '' || text === '') return false;
         setLibrary((current) => {
           if (form.id === undefined) {
-            return { ...current, prompts: [{ id: newId(), title, text }, ...current.prompts] };
+            return { ...current, prompts: [{ id: newId(), title, text, fav: false }, ...current.prompts] };
           }
           return {
             ...current,
-            prompts: current.prompts.map((prompt) => (prompt.id === form.id ? { id: prompt.id, title, text } : prompt)),
+            prompts: current.prompts.map((prompt) => (prompt.id === form.id ? { ...prompt, title, text } : prompt)),
           };
         });
         return true;
@@ -441,8 +509,14 @@ window.__ModuleLoader__.load({
         setConfirmId(null);
       };
 
-      const restoreDefaults = () => {
-        setLibrary((current) => ({ ...current, prompts: SEED_PROMPTS.map(normalizePrompt) }));
+      /** Flip the star on one row; the starred set is exactly what the 收藏 tab lists. */
+      const toggleFavorite = (id) => {
+        setLibrary((current) => ({
+          ...current,
+          prompts: current.prompts.map((prompt) =>
+            prompt.id === id ? { ...prompt, fav: prompt.fav !== true } : prompt,
+          ),
+        }));
         setConfirmId(null);
       };
 
@@ -503,9 +577,39 @@ window.__ModuleLoader__.load({
           onSave: (form) => {
             if (savePrompt(form)) setEditing(null);
           },
+          onSaveAsCopy: (form) => {
+            // A copy must be distinguishable in the list, not a second identical title.
+            if (savePrompt({ ...form, id: undefined, title: `${form.title}${t('form.copySuffix')}` })) setEditing(null);
+          },
         });
       } else {
         body = [
+          h(
+            'div',
+            { key: 'tabs', className: 'dsh-pm-tabs' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-pm-tab',
+                'data-on': tab === 'all' ? 'true' : 'false',
+                onClick: () => setTab('all'),
+              },
+              t('panel.tabAll'),
+              h('span', { className: 'dsh-pm-count' }, String(library.prompts.length)),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-pm-tab',
+                'data-on': tab === 'fav' ? 'true' : 'false',
+                onClick: () => setTab('fav'),
+              },
+              t('panel.tabFav'),
+              h('span', { className: 'dsh-pm-count' }, String(favCount)),
+            ),
+          ),
           h('input', {
             key: 'search',
             ref: searchRef,
@@ -513,30 +617,70 @@ window.__ModuleLoader__.load({
             type: 'search',
             value: query,
             placeholder: t('panel.search'),
+            title: t('panel.searchHint'),
             onChange: (event) => setQuery(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                if (rows.length === 0) return;
+                event.preventDefault();
+                const step = event.key === 'ArrowDown' ? 1 : -1;
+                setActive((current) => (current + step + rows.length) % rows.length);
+                return;
+              }
+              if (event.key !== 'Enter') return;
+              const target = rows[active];
+              if (target === undefined) return;
+              event.preventDefault();
+              insert(target);
+            },
           }),
           rows.length === 0
-            ? h('div', { key: 'empty', className: 'dsh-pm-empty' }, library.prompts.length === 0 ? t('panel.empty') : t('panel.noMatch'))
+            ? h(
+                'div',
+                { key: 'empty', className: 'dsh-pm-empty' },
+                library.prompts.length === 0
+                  ? t('panel.empty')
+                  : tab === 'fav' && query.trim() === ''
+                    ? t('panel.emptyFav')
+                    : t('panel.noMatch'),
+              )
             : h(
                 'div',
                 { key: 'list', className: 'dsh-pm-list' },
-                rows.map((prompt) =>
+                rows.map((prompt, index) =>
                   h(
                     'div',
                     {
                       key: prompt.id,
                       className: 'dsh-pm-row',
+                      'data-active': index === active ? 'true' : 'false',
                       role: 'button',
                       tabIndex: 0,
                       title: prompt.text,
                       onClick: () => insert(prompt),
                       onKeyDown: (event) => {
+                        if (event.target !== event.currentTarget) return;
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
                           insert(prompt);
                         }
                       },
                     },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dsh-pm-star',
+                        'data-on': prompt.fav === true ? 'true' : 'false',
+                        'aria-pressed': prompt.fav === true ? 'true' : 'false',
+                        title: prompt.fav === true ? t('action.unfavorite') : t('action.favorite'),
+                        onClick: (event) => {
+                          event.stopPropagation();
+                          toggleFavorite(prompt.id);
+                        },
+                      },
+                      h(StarIcon, { filled: prompt.fav === true }),
+                    ),
                     h(
                       'div',
                       { className: 'dsh-pm-row-main' },
@@ -629,15 +773,6 @@ window.__ModuleLoader__.load({
               },
               t('panel.clear'),
             ),
-            h(
-              'button',
-              {
-                type: 'button',
-                className: 'dsh-pm-mini',
-                onClick: restoreDefaults,
-              },
-              t('panel.restore'),
-            ),
           ),
         ];
       }
@@ -650,7 +785,10 @@ window.__ModuleLoader__.load({
           className: 'dsh-pm-panel',
           role: 'dialog',
           'aria-label': t('panel.title'),
-          style: position === null ? { left: 8, bottom: 8, width: PANEL_WIDTH, maxHeight: '60vh' } : { left: position.left, bottom: position.bottom, width: PANEL_WIDTH, maxHeight: '60vh' },
+          style:
+            position === null
+              ? { left: 8, bottom: 8, width: PANEL_WIDTH, maxHeight: 'min(70vh, 560px)' }
+              : { left: position.left, bottom: position.bottom, width: PANEL_WIDTH, maxHeight: 'min(70vh, 560px)' },
         },
         header,
         h('div', { className: 'dsh-pm-body' }, body),
@@ -700,6 +838,9 @@ window.__ModuleLoader__.load({
           'div',
           { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
           h('button', { type: 'button', className: 'dsh-pm-btn', onClick: props.onCancel }, t('form.cancel')),
+          props.value.id === undefined
+            ? null
+            : h('button', { type: 'button', className: 'dsh-pm-btn', onClick: () => props.onSaveAsCopy({ id: props.value.id, title, text }) }, t('form.duplicate')),
           h('button', { type: 'button', className: 'dsh-pm-btn dsh-pm-btn-primary', onClick: save }, t('form.save')),
         ),
       );
