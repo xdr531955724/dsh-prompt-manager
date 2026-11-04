@@ -10,10 +10,10 @@
 
 - **一键写入**：点列表条目 → 通过 composer 的 `inputActions` 写入草稿区（不碰编辑器 DOM）。
 - **两种写入方式**（面板底部切换，跟随保存）：`插入`（光标处写入，输入框为空即整段写入）/ `替换`（覆盖输入框全部内容）。
-- **收藏**：每行左侧的 ☆ 一键收藏 / 取消收藏；顶部 `全部 / 收藏` 两个页签各带条数，同一话题写很多条时，常用的收起来就不再翻整个列表。
+- **标签分组**：一条提示词可以带多个标签（表单里用逗号分隔，如 `小满, 报告`）；面板顶部一条标签栏列出所有标签和各自条数，点一下只看这个话题下的条目——**同一话题写十几条也不乱**。没填标签的归到「未分组」。
 - **键盘操作**：搜索框里 `↑ / ↓` 移动高亮，`Enter` 直接把该条写进输入框（手不离键盘）。
-- **管理**：新建 / 编辑（收藏状态与顺序保留）/ 删除（二次确认，再点一次确认）/「清空输入框」。
-- **搜索**：按名称与内容过滤，与当前页签叠加生效。
+- **管理**：新建 / 编辑（标签随编辑改）/ 另存副本（同话题复制一条改几处）/ 删除（二次确认，再点一次确认）/「清空输入框」。
+- **搜索**：按名称、正文和标签一起过滤，与当前选中的标签叠加生效。
 - **持久化**：本机 `localStorage`（键 `dsh.prompt-manager.v1`），收藏标记一并保存。首次安装预置 4 条。
 
 ### 提示词优化（工具栏「优化」按钮）
@@ -102,7 +102,7 @@ node dev/render-check.mjs
 | `cordis.patch.yml` | 唯一一条 Host 行（`id: prompt-manager`） |
 | `index.js` | Host 半边：三条回环 JSON 路由 + 元提示词（只用 `node:` 内置模块，因为插件是链接进 profile 的，裸包名解析不到） |
 | `client.js` | Client 半边：两个工具栏条目与各自的面板 |
-| `dev/` | 自测脚本（不随 profile 加载） |
+| `dev/` | 自测脚本（不随 profile 加载）：`render-check.mjs` 用假 hooks 跑无头渲染断言 |
 | `locale/{zh,en}.json` | 插件卡片标题与描述 |
 | `icon.svg` | 插件图标 |
 
@@ -124,7 +124,7 @@ MIT，见 [LICENSE](LICENSE)。
 
 A DSH (DeepSeek Harness) bundle that adds two controls to the composer tool row:
 
-1. **Prompt library** (`提示词`): a click-to-insert list of saved prompts, with a starred view for the ones you keep reusing, create/edit/delete, "save as copy", search and ↑↓/Enter keyboard selection — persisted in the page's `localStorage`.
+1. **Prompt library** (`提示词`): a click-to-insert list of saved prompts organised by tags — one chip per topic, several prompts under each, an "Ungrouped" bucket for the rest. Create/edit/delete, "save as copy", search across names, text and tags, and ↑↓/Enter keyboard selection — persisted in the page's `localStorage`.
 2. **Prompt optimizer** (`优化`): rewrites whatever is in the composer through any OpenAI-compatible `/chat/completions` endpoint and, after your confirmation (or automatically), replaces the draft. Host-side routes keep the API key out of the browser; the key is read from the plugin config, an environment variable, or `~/.dsh/.credentials.yaml`.
 
 Install with the built-in plugin manager (`install_bundle` pointing at the cloned directory). The client half hot-reloads; the host half loads on the next DSH start. MIT licensed.

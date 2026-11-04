@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Prompt Manager",
-    "description": "A \"Prompts\" button in the composer toolbar: open your saved prompts and write one into the composer in a single click. Starred view, create, edit, delete, search and keyboard navigation."
+    "description": "A \"Prompts\" button in the composer toolbar: write a saved prompt into the composer in a single click. Tag your prompts by topic, then filter, create, edit, copy, delete, search and select from the keyboard."
   }
 }

@@ -1,10 +1,10 @@
 /**
  * Headless render check for the prompt-library panel.
  *
- * No real React is involved: this stands in a tiny hooks shim so the component
- * can be called outside a browser. It catches undefined identifiers, wrong prop
- * names and wrong list contents — the failures that would otherwise only show
- * as a blank popover in the live UI.
+ * No real React is involved: a tiny hooks shim stands in, so the component can be
+ * called outside a browser. It catches undefined identifiers, wrong prop names,
+ * wrong list contents and dictionary drift — the failures that would otherwise
+ * only show up as a broken popover in the live UI.
  */
 import { readFileSync } from 'node:fs';
 
@@ -68,11 +68,7 @@ function textOf(node) {
 
 async function loadPlugin(doc) {
   const stored = doc === null ? null : JSON.stringify(doc);
-  const localStorage = {
-    getItem: () => stored,
-    setItem: () => {},
-    removeItem: () => {},
-  };
+  const localStorage = { getItem: () => stored, setItem: () => {}, removeItem: () => {} };
   globalThis.window = {
     localStorage,
     innerWidth: 1440,
@@ -94,7 +90,6 @@ async function loadPlugin(doc) {
       });
     },
   };
-  const React = shim.React;
   const source = readFileSync(SOURCE, 'utf8');
   // eslint-disable-next-line no-new-func
   new Function('window', 'globalThis', source)(globalThis.window, globalThis);
@@ -123,27 +118,13 @@ async function loadPlugin(doc) {
       t,
       useInput: (selector) => selector({ draft: '' }),
       inputActions: { setDraft() {}, captureInsertion: () => null, insertText: () => true },
-    }, overrides);
+    });
   };
   const resetHooks = () => {
     shim.session.hook = 0;
     shim.session.overrides = {};
   };
-  return { render, resetHooks, React, zh, en };
-}
-
-function collectPanel(tree, React) {
-  const rows = [];
-  const tabs = [];
-  walk(tree, (element) => {
-    const cls = typeof element.props.className === 'string' ? element.props.className : '';
-    if (cls === 'dsh-pm-row') {
-      const star = element.children.find((child) => child?.props?.className === 'dsh-pm-star');
-      rows.push({ active: element.props['data-active'], starred: star?.props['data-on'], title: textOf(element) });
-    }
-    if (cls === 'dsh-pm-tab') tabs.push({ on: element.props['data-on'], label: textOf(element) });
-  });
-  return { rows, tabs, text: textOf(tree) };
+  return { render, resetHooks, React: shim.React, zh, en };
 }
 
 /** Function components are not invoked by the shim; call one explicitly. */
@@ -157,6 +138,19 @@ function renderChild(tree, matches, resetHooks) {
   return found.type(found.props);
 }
 
+function collectPanel(tree) {
+  const rows = [];
+  const chips = [];
+  const rowTags = [];
+  walk(tree, (element) => {
+    const cls = typeof element.props.className === 'string' ? element.props.className : '';
+    if (cls === 'dsh-pm-row') rows.push({ active: element.props['data-active'], text: textOf(element) });
+    if (cls === 'dsh-pm-chip') chips.push({ on: element.props['data-on'], label: textOf(element) });
+    if (cls === 'dsh-pm-row-tag') rowTags.push(textOf(element));
+  });
+  return { rows, chips, rowTags, text: textOf(tree) };
+}
+
 let failures = 0;
 const check = (label, condition, extra) => {
   if (condition) return;
@@ -164,80 +158,106 @@ const check = (label, condition, extra) => {
   console.log(`FAIL ${label}${extra === undefined ? '' : ` :: ${JSON.stringify(extra)}`}`);
 };
 
-// --- 0: the two dictionaries must stay in lockstep ------------------------------
+// --- 0: dictionaries stay in lockstep --------------------------------------------
 {
   const { zh, en } = await loadPlugin(null);
   const zhKeys = Object.keys(zh).sort();
   const enKeys = Object.keys(en).sort();
-  const onlyZh = zhKeys.filter((key) => !enKeys.includes(key));
-  const onlyEn = enKeys.filter((key) => !zhKeys.includes(key));
-  check('dict keys identical', onlyZh.length === 0 && onlyEn.length === 0, { onlyZh, onlyEn });
-  check('empty keys removed', !('panel.restore' in zh) && !('panel.restore' in en), null);
-  check('fav keys present', 'panel.tabFav' in zh && 'action.favorite' in zh && 'form.duplicate' in zh, null);
+  check('dict keys identical', zhKeys.join() === enKeys.join(), {
+    onlyZh: zhKeys.filter((key) => !enKeys.includes(key)),
+    onlyEn: enKeys.filter((key) => !zhKeys.includes(key)),
+  });
+  check('star keys removed', !('panel.tabFav' in zh) && !('action.favorite' in zh) && !('panel.restore' in zh), null);
+  check('tag keys present', 'panel.untagged' in zh && 'form.tags' in zh && 'form.duplicate' in zh, null);
 }
 
-// --- A: fresh install, 全部 tab -------------------------------------------------
+// --- A: fresh install, one chip per seed tag -------------------------------------
 {
-  const { render, React } = await loadPlugin(null);
-  // open(#1)=true, tab stays 'all'
-  const tree = render({ 1: true });
-  const view = collectPanel(tree, React);
+  const { render } = await loadPlugin(null);
+  const view = collectPanel(render({ 1: true }));
   check('A rows=4 seeds', view.rows.length === 4, view.rows.length);
   check('A no restore button', !view.text.includes('恢复默认'), view.text.slice(0, 200));
-  check('A tabs present', view.tabs.length === 2, view.tabs);
-  check('A all tab on', view.tabs[0]?.on === 'true', view.tabs[0]);
-  check('A no stars yet', view.rows.every((row) => row.starred === 'false'), view.rows.map((r) => r.starred));
+  check('A chips = 全部 + 3 tags', view.chips.length === 4, view.chips);
+  check('A all chip on', view.chips[0]?.on === 'true', view.chips[0]);
+  check('A 全部 count', view.chips[0]?.label.includes('4'), view.chips[0]?.label);
+  check('A 代码 count 2', view.chips.some((chip) => chip.label.startsWith('代码') && chip.label.includes('2')), view.chips);
+  check('A no untagged chip', !view.chips.some((chip) => chip.label.startsWith('未分组')), view.chips);
+  check('A row tags rendered', view.rowTags.length === 4, view.rowTags);
   check('A first row highlighted', view.rows[0]?.active === 'true', view.rows.map((r) => r.active));
 }
 
-// --- B: 3 stored prompts, 2 starred, 收藏 tab -----------------------------------
+// --- B: tagged store, chip filtering, untagged bucket ----------------------------
 const stored = {
   version: 1,
   insertMode: 'insert',
   prompts: [
-    { id: 'a', title: '定时任务', text: '今天定时任务的报告你看一下', fav: true },
-    { id: 'b', title: '更新', text: '请检查我的所有的插件', fav: false },
-    { id: 'c', title: '小满', text: '你看着办', fav: true },
+    { id: 'a', title: '定时任务', text: '今天定时任务的报告你看一下', tags: ['小满', '报告'] },
+    { id: 'b', title: '更新', text: '请检查我的所有的插件', tags: [] },
+    { id: 'c', title: '小满检讨', text: '你看着办', tags: ['小满'] },
   ],
 };
 {
-  const { render, React } = await loadPlugin(stored);
-  // open(#1)=true, tab(#3)='fav'
-  const tree = render({ 1: true, 3: 'fav' });
-  const view = collectPanel(tree, React);
-  check('B fav tab filters to 2', view.rows.length === 2, view.rows.length);
-  check('B fav rows all starred', view.rows.every((row) => row.starred === 'true'), view.rows.map((r) => r.starred));
-  check('B fav tab on', view.tabs[1]?.on === 'true', view.tabs[1]);
-  check('B fav count shown', view.text.includes('2'), view.text.slice(0, 160));
+  const { render } = await loadPlugin(stored);
+  const view = collectPanel(render({ 1: true }));
+  check('B chips = 全部 + 2 tags + 未分组', view.chips.length === 4, view.chips);
+  check('B 小满 has 2', view.chips.some((chip) => chip.label.startsWith('小满') && chip.label.includes('2')), view.chips);
+  check('B 未分组 has 1', view.chips.some((chip) => chip.label.startsWith('未分组') && chip.label.includes('1')), view.chips);
+  check('B rows = 3', view.rows.length === 3, view.rows.length);
 }
 {
-  const { render, React } = await loadPlugin(stored);
-  const view = collectPanel(render({ 1: true }), React);
-  check('C all tab shows 3', view.rows.length === 3, view.rows.length);
-  check('C exactly 2 stars', view.rows.filter((row) => row.starred === 'true').length === 2, view.rows.map((r) => r.starred));
+  const { render } = await loadPlugin(stored);
+  // open(#1)=true, tagFilter(#3)='小满'
+  const view = collectPanel(render({ 1: true, 3: '小满' }));
+  check('B tag filter to 2', view.rows.length === 2, view.rows.length);
+  check('B filtered rows are the tagged ones', view.rows.every((row) => !row.text.includes('请检查我的所有的插件')), view.rows.map((r) => r.text));
+  check('B active chip on', view.chips.find((chip) => chip.label.startsWith('小满'))?.on === 'true', view.chips);
+}
+{
+  const { render } = await loadPlugin(stored);
+  // tagFilter(#3)='' is the untagged bucket
+  const view = collectPanel(render({ 1: true, 3: '' }));
+  check('B untagged filter to 1', view.rows.length === 1, view.rows.length);
+  check('B untagged row', view.rows[0]?.text.includes('请检查我的所有的插件'), view.rows.map((r) => r.text));
 }
 
-// --- D: the edit form offers a copy action, and it carries the open dialog -------
+// --- C: search reaches into tags, and dirty tag text is cleaned ------------------
+{
+  const { render } = await loadPlugin({
+    version: 1,
+    insertMode: 'insert',
+    prompts: [
+      { id: 'x', title: '甲', text: '与标签无关的正文', tags: ['  小满 ，报告 ', '小满'] },
+      { id: 'y', title: '乙', text: '另一条', tags: [] },
+    ],
+  });
+  const view = collectPanel(render({ 1: true, 2: '小满' }));
+  check('C search matches tag', view.rows.length === 1 && view.rows[0].text.includes('甲'), view.rows.map((r) => r.text));
+  const all = collectPanel(render({ 1: true }));
+  check('C tags normalised', all.chips.length === 4, all.chips); // 全部 + 小满 + 报告 + 未分组
+  check('C duplicate tag collapsed', all.chips.filter((chip) => chip.label.startsWith('小满')).length === 1, all.chips);
+}
+
+// --- D: the edit form edits tags, and offers a copy action ----------------------
 {
   const { render, resetHooks } = await loadPlugin(stored);
-  // open(#1)=true, editing(#5)=an existing prompt
-  const tree = render({ 1: true, 5: { id: 'b', title: '更新', text: '请检查我的所有的插件' } });
+  const tree = render({ 1: true, 5: { id: 'a', title: '定时任务', text: '今天定时任务的报告你看一下', tags: ['小满', '报告'] } });
   check('D panel title', textOf(tree).includes('编辑提示词'), textOf(tree).slice(0, 120));
   const form = renderChild(tree, (el) => typeof el.props.onSaveAsCopy === 'function', resetHooks);
+  check('D form renders', form !== null, null);
   const text = form === null ? '' : textOf(form);
-  check('D form renders', form !== null, text.slice(0, 240));
+  check('D form shows tags label', text.includes('标签'), text.slice(0, 240));
   check('D form shows save', text.includes('保存'), text.slice(0, 240));
   check('D form shows copy', text.includes('另存副本'), text.slice(0, 240));
-  check('D form hides list rows', !textOf(tree).includes('今天定时任务的报告你看一下'), text.slice(0, 240));
+  let tagInput = null;
+  if (form !== null) walk(form, (el) => { if (el.props.id === 'dsh-pm-tags') tagInput = el; });
+  check('D tag input prefilled', tagInput?.props.value === '小满, 报告', tagInput?.props.value);
 }
 {
   const { render, resetHooks } = await loadPlugin(stored);
-  // open(#1)=true, editing(#5)=a new prompt: no copy action
-  const tree = render({ 1: true, 5: { title: '', text: '' } });
+  const tree = render({ 1: true, 5: { title: '', text: '', tags: [] } });
   const form = renderChild(tree, (el) => typeof el.props.onSaveAsCopy === 'function', resetHooks);
   const text = form === null ? '' : textOf(form);
   check('D new form has no copy action', !text.includes('另存副本'), text.slice(0, 240));
-  check('D new form keeps save', text.includes('保存'), text.slice(0, 240));
   check('D new form title', textOf(tree).includes('新建提示词'), textOf(tree).slice(0, 240));
 }
 

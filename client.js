@@ -37,11 +37,9 @@ window.__ModuleLoader__.load({
       'panel.empty': '还没有提示词，点「新建」添加一条。',
       'panel.noMatch': '没有匹配的提示词。',
       'panel.tabAll': '全部',
-      'panel.tabFav': '收藏',
-      'panel.emptyFav': '还没有收藏的提示词。点条目左侧的 ☆ 收藏，常用的就不用每次翻。',
-      'panel.searchHint': '搜索名称和内容；↑↓ 选择，Enter 写入输入框',
-      'action.favorite': '收藏',
-      'action.unfavorite': '取消收藏',
+      'panel.untagged': '未分组',
+      'panel.emptyTag': '这个标签下还没有提示词。',
+      'panel.searchHint': '搜索名称、内容和标签；↑↓ 选择，Enter 写入输入框',
       'panel.mode': '点击后',
       'panel.modeInsert': '插入',
       'panel.modeReplace': '替换',
@@ -56,6 +54,9 @@ window.__ModuleLoader__.load({
       'form.namePlaceholder': '例：代码审查',
       'form.text': '内容',
       'form.textPlaceholder': '点击该条目时写入输入框的文本',
+      'form.tags': '标签',
+      'form.tagsPlaceholder': '用逗号分隔，例如：小满, 报告',
+      'form.tagsHint': '同一话题的提示词填同一个标签；面板顶部的标签条会按它分组。',
       'form.save': '保存',
       'form.duplicate': '另存副本',
       'form.copySuffix': ' 副本',
@@ -108,11 +109,9 @@ window.__ModuleLoader__.load({
       'panel.empty': 'No prompts yet — click "New" to add one.',
       'panel.noMatch': 'No matching prompt.',
       'panel.tabAll': 'All',
-      'panel.tabFav': 'Starred',
-      'panel.emptyFav': 'No starred prompts yet — tap the ☆ on a row to pin the ones you keep reaching for.',
-      'panel.searchHint': 'Search names and text; ↑↓ to move, Enter to write it into the composer',
-      'action.favorite': 'Star',
-      'action.unfavorite': 'Unstar',
+      'panel.untagged': 'Ungrouped',
+      'panel.emptyTag': 'Nothing under this tag yet.',
+      'panel.searchHint': 'Search names, text and tags; ↑↓ to move, Enter to write it into the composer',
       'panel.mode': 'Click',
       'panel.modeInsert': 'Insert',
       'panel.modeReplace': 'Replace',
@@ -127,6 +126,9 @@ window.__ModuleLoader__.load({
       'form.namePlaceholder': 'e.g. Code review',
       'form.text': 'Text',
       'form.textPlaceholder': 'What gets written into the composer',
+      'form.tags': 'Tags',
+      'form.tagsPlaceholder': 'Comma separated, e.g. budget, review',
+      'form.tagsHint': 'Prompts about the same topic share a tag; the chip row at the top filters by them.',
       'form.save': 'Save',
       'form.duplicate': 'Save as copy',
       'form.copySuffix': ' copy',
@@ -173,21 +175,25 @@ window.__ModuleLoader__.load({
       {
         id: 'seed-code-review',
         title: '代码审查',
+        tags: ['代码'],
         text: '请以资深工程师的视角审查这些改动：先列出真正的缺陷与风险（按严重程度排序，标明文件与行号），再给最小修复方案。不要重写无关代码，不要复述改动内容。',
       },
       {
         id: 'seed-clarify',
         title: '先澄清再动手',
+        tags: ['沟通'],
         text: '先不要改任何文件。请先用三句话复述你对需求的理解，再列出 3-5 个会影响实现的关键疑问，等我确认后再开始。',
       },
       {
         id: 'seed-summarize',
         title: '压缩成要点',
+        tags: ['写作'],
         text: '把上面的内容压缩成要点清单：每条不超过 20 字，保留结论、数字、命令和待办，去掉过程与解释。',
       },
       {
         id: 'seed-fix-error',
         title: '修报错',
+        tags: ['代码'],
         text: '下面是完整报错与上下文。请先定位根因并说明证据，再给出最小改动方案，然后实施并验证；不要顺手重构其他代码。',
       },
     ];
@@ -210,12 +216,43 @@ window.__ModuleLoader__.load({
       return trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed;
     }
 
+    /** Longest accepted tag, in characters; longer input is clipped, not dropped. */
+    const MAX_TAG_LENGTH = 16;
+    /** How many tags one prompt may carry. */
+    const MAX_TAGS = 8;
+
+    /**
+     * Split whatever the user typed into a clean tag list. Commas (both widths),
+     * the enumeration comma, ideographic space and plain whitespace all
+     * separate tags, so " 小满,  报告 " and "小满 报告" mean the same thing.
+     * @param value - string from the form, or an array read from storage.
+     * @returns tags, trimmed, de-duplicated, order preserved, capped.
+     */
+    function parseTags(value) {
+      const raw = Array.isArray(value)
+        ? value.map((item) => String(item)).join(',')
+        : String(value === undefined || value === null ? '' : value);
+      // Storage and the form go through the same splitter, so a row saved by an
+      // older build with "a, b" inside one array slot is cleaned up on read.
+      const parts = raw.split(/[,，、\s]+/);
+      const seen = new Set();
+      const tags = [];
+      for (const part of parts) {
+        const tag = part.trim().slice(0, MAX_TAG_LENGTH);
+        if (tag === '' || seen.has(tag)) continue;
+        seen.add(tag);
+        tags.push(tag);
+        if (tags.length >= MAX_TAGS) break;
+      }
+      return tags;
+    }
+
     /** @param raw - one stored row. @returns a normalized prompt. */
     function normalizePrompt(raw) {
       const text = raw.text;
       const title = typeof raw.title === 'string' && raw.title.trim() !== '' ? raw.title.trim() : firstLine(text) || '未命名';
       const id = typeof raw.id === 'string' && raw.id !== '' ? raw.id : newId();
-      return { id, title, text, fav: raw.fav === true };
+      return { id, title, text, tags: parseTags(raw.tags) };
     }
 
     /** @returns the stored library document, or null when this device has none. */
@@ -275,7 +312,7 @@ window.__ModuleLoader__.load({
 .dsh-pm-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:var(--dsw-radius-md,8px);cursor:pointer}
 .dsh-pm-row:hover,.dsh-pm-row:focus-visible{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14));outline:none}
 .dsh-pm-row-main{min-width:0;flex:1}
-.dsh-pm-row-title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsh-pm-row-title{min-width:0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsh-pm-row-text{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsh-pm-row-actions{display:flex;align-items:center;gap:2px;flex:none;opacity:0;transition:opacity .1s ease}
 .dsh-pm-row:hover .dsh-pm-row-actions,.dsh-pm-row:focus-within .dsh-pm-row-actions{opacity:1}
@@ -309,16 +346,14 @@ window.__ModuleLoader__.load({
 .dsh-pm-row-line select{flex:1 1 auto;min-width:0}
 .dsh-pm-row-line input[type="checkbox"]{width:14px;height:14px;accent-color:var(--dsw-alias-brand-primary)}
 .dsh-pm-hint{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.dsh-pm-tabs{display:flex;align-items:center;gap:4px;padding:0 12px 2px}
-.dsh-pm-tab{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:18px;cursor:pointer}
-.dsh-pm-tab:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14));color:var(--dsw-alias-label-primary)}
-.dsh-pm-tab[data-on="true"]{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.14));color:var(--dsw-alias-label-primary);font-weight:600}
-.dsh-pm-tab .dsh-pm-count{font-weight:400}
-.dsh-pm-star{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));cursor:pointer;opacity:.38;transition:opacity .1s ease,color .1s ease}
-.dsh-pm-star:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.2))}
-.dsh-pm-row:hover .dsh-pm-star,.dsh-pm-star:focus-visible{opacity:1}
-.dsh-pm-star[data-on="true"]{opacity:1;color:var(--dsw-alias-brand-primary)}
-.dsh-pm-star-icon{width:14px;height:14px;display:block}
+.dsh-pm-chips{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:2px 12px}
+.dsh-pm-chip{display:inline-flex;align-items:center;gap:5px;flex:none;max-width:150px;height:24px;padding:0 9px;border:0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.12));color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsh-pm-chip:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.22));color:var(--dsw-alias-label-primary)}
+.dsh-pm-chip[data-on="true"]{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-inverted,#fff);font-weight:600}
+.dsh-pm-chip[data-on="true"] .dsh-pm-chip-count{opacity:.8}
+.dsh-pm-chip-count{flex:none;color:inherit;opacity:.6;font-size:11px}
+.dsh-pm-row-head{display:flex;align-items:baseline;gap:6px;min-width:0}
+.dsh-pm-row-tag{flex:none;max-width:76px;padding:0 5px;border-radius:4px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.12));color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsh-pm-row[data-active="true"]{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
 `;
 
@@ -341,23 +376,6 @@ window.__ModuleLoader__.load({
       );
     }
 
-    /** Inline star glyph for the per-row favourite toggle. */
-    function StarIcon(props) {
-      return h(
-        'svg',
-        {
-          className: 'dsh-pm-star-icon',
-          viewBox: '0 0 24 24',
-          fill: props.filled ? 'currentColor' : 'none',
-          stroke: 'currentColor',
-          strokeWidth: 1.6,
-          strokeLinejoin: 'round',
-          'aria-hidden': 'true',
-        },
-        h('path', { d: 'M12 4.2l2.35 4.9 5.35.72-3.9 3.72.98 5.3L12 16.3l-4.78 2.54.98-5.3L4.3 9.82l5.35-.72z' }),
-      );
-    }
-
     /**
      * The composer tool-row control and its popover.
      * @param props - standard Session props (useInput, inputActions) plus the
@@ -372,7 +390,8 @@ window.__ModuleLoader__.load({
       const [library, setLibrary] = React.useState(initialDocument);
       const [open, setOpen] = React.useState(false);
       const [query, setQuery] = React.useState('');
-      const [tab, setTab] = React.useState('all');
+      /** null = 全部, '' = 未分组, otherwise one tag name. */
+      const [tagFilter, setTagFilter] = React.useState(null);
       const [active, setActive] = React.useState(0);
       const [editing, setEditing] = React.useState(null);
       const [confirmId, setConfirmId] = React.useState(null);
@@ -433,10 +452,10 @@ window.__ModuleLoader__.load({
         if (open && editing === null && searchRef.current !== null) searchRef.current.focus();
       }, [open, editing]);
 
-      /** A new query or tab makes the previously highlighted row meaningless. */
+      /** A new query or tag makes the previously highlighted row meaningless. */
       React.useEffect(() => {
         setActive(0);
-      }, [query, tab]);
+      }, [query, tagFilter]);
 
       /** Keyboard navigation must not walk the highlight out of the visible list. */
       React.useEffect(() => {
@@ -448,18 +467,42 @@ window.__ModuleLoader__.load({
 
       const rows = React.useMemo(() => {
         const needle = query.trim().toLowerCase();
-        const scoped = tab === 'fav' ? library.prompts.filter((prompt) => prompt.fav === true) : library.prompts;
+        const scoped =
+          tagFilter === null
+            ? library.prompts
+            : tagFilter === ''
+              ? library.prompts.filter((prompt) => prompt.tags.length === 0)
+              : library.prompts.filter((prompt) => prompt.tags.includes(tagFilter));
         if (needle === '') return scoped;
         return scoped.filter(
-          (prompt) => prompt.title.toLowerCase().includes(needle) || prompt.text.toLowerCase().includes(needle),
+          (prompt) =>
+            prompt.title.toLowerCase().includes(needle) ||
+            prompt.text.toLowerCase().includes(needle) ||
+            prompt.tags.some((tag) => tag.toLowerCase().includes(needle)),
         );
-      }, [library.prompts, query, tab]);
+      }, [library.prompts, query, tagFilter]);
 
-      /** Total star count, shown on the 收藏 tab regardless of the current filter. */
-      const favCount = React.useMemo(
-        () => library.prompts.filter((prompt) => prompt.fav === true).length,
-        [library.prompts],
-      );
+      /**
+       * The chip row: every tag in first-seen order with how many prompts carry
+       * it, plus the untagged bucket. Deleting a prompt can make a tag vanish,
+       * so this is derived, never stored.
+       */
+      const tagGroups = React.useMemo(() => {
+        const order = [];
+        const counts = new Map();
+        let untagged = 0;
+        for (const prompt of library.prompts) {
+          if (prompt.tags.length === 0) untagged += 1;
+          for (const tag of prompt.tags) {
+            if (!counts.has(tag)) {
+              counts.set(tag, 0);
+              order.push(tag);
+            }
+            counts.set(tag, counts.get(tag) + 1);
+          }
+        }
+        return { order, counts, untagged };
+      }, [library.prompts]);
 
       const toggle = () => {
         setOpen((value) => !value);
@@ -491,14 +534,15 @@ window.__ModuleLoader__.load({
       const savePrompt = (form) => {
         const title = form.title.trim();
         const text = form.text.trim();
+        const tags = parseTags(form.tags);
         if (title === '' || text === '') return false;
         setLibrary((current) => {
           if (form.id === undefined) {
-            return { ...current, prompts: [{ id: newId(), title, text, fav: false }, ...current.prompts] };
+            return { ...current, prompts: [{ id: newId(), title, text, tags }, ...current.prompts] };
           }
           return {
             ...current,
-            prompts: current.prompts.map((prompt) => (prompt.id === form.id ? { ...prompt, title, text } : prompt)),
+            prompts: current.prompts.map((prompt) => (prompt.id === form.id ? { ...prompt, title, text, tags } : prompt)),
           };
         });
         return true;
@@ -506,17 +550,6 @@ window.__ModuleLoader__.load({
 
       const removePrompt = (id) => {
         setLibrary((current) => ({ ...current, prompts: current.prompts.filter((prompt) => prompt.id !== id) }));
-        setConfirmId(null);
-      };
-
-      /** Flip the star on one row; the starred set is exactly what the 收藏 tab lists. */
-      const toggleFavorite = (id) => {
-        setLibrary((current) => ({
-          ...current,
-          prompts: current.prompts.map((prompt) =>
-            prompt.id === id ? { ...prompt, fav: prompt.fav !== true } : prompt,
-          ),
-        }));
         setConfirmId(null);
       };
 
@@ -557,7 +590,7 @@ window.__ModuleLoader__.load({
                   type: 'button',
                   className: 'dsh-pm-btn',
                   onClick: () => {
-                    setEditing({ title: '', text: '' });
+                    setEditing({ title: '', text: '', tags: [] });
                     setConfirmId(null);
                   },
                 },
@@ -578,7 +611,7 @@ window.__ModuleLoader__.load({
             if (savePrompt(form)) setEditing(null);
           },
           onSaveAsCopy: (form) => {
-            // A copy must be distinguishable in the list, not a second identical title.
+            // A copy keeps its tags (same topic) but must not repeat the title verbatim.
             if (savePrompt({ ...form, id: undefined, title: `${form.title}${t('form.copySuffix')}` })) setEditing(null);
           },
         });
@@ -586,29 +619,46 @@ window.__ModuleLoader__.load({
         body = [
           h(
             'div',
-            { key: 'tabs', className: 'dsh-pm-tabs' },
+            { key: 'chips', className: 'dsh-pm-chips' },
             h(
               'button',
               {
                 type: 'button',
-                className: 'dsh-pm-tab',
-                'data-on': tab === 'all' ? 'true' : 'false',
-                onClick: () => setTab('all'),
+                className: 'dsh-pm-chip',
+                'data-on': tagFilter === null ? 'true' : 'false',
+                onClick: () => setTagFilter(null),
               },
               t('panel.tabAll'),
-              h('span', { className: 'dsh-pm-count' }, String(library.prompts.length)),
+              h('span', { className: 'dsh-pm-chip-count' }, String(library.prompts.length)),
             ),
-            h(
-              'button',
-              {
-                type: 'button',
-                className: 'dsh-pm-tab',
-                'data-on': tab === 'fav' ? 'true' : 'false',
-                onClick: () => setTab('fav'),
-              },
-              t('panel.tabFav'),
-              h('span', { className: 'dsh-pm-count' }, String(favCount)),
+            tagGroups.order.map((tag) =>
+              h(
+                'button',
+                {
+                  key: `tag:${tag}`,
+                  type: 'button',
+                  className: 'dsh-pm-chip',
+                  'data-on': tagFilter === tag ? 'true' : 'false',
+                  onClick: () => setTagFilter(tag),
+                },
+                tag,
+                h('span', { className: 'dsh-pm-chip-count' }, String(tagGroups.counts.get(tag))),
+              ),
             ),
+            tagGroups.untagged === 0
+              ? null
+              : h(
+                  'button',
+                  {
+                    key: 'tag:untagged',
+                    type: 'button',
+                    className: 'dsh-pm-chip',
+                    'data-on': tagFilter === '' ? 'true' : 'false',
+                    onClick: () => setTagFilter(''),
+                  },
+                  t('panel.untagged'),
+                  h('span', { className: 'dsh-pm-chip-count' }, String(tagGroups.untagged)),
+                ),
           ),
           h('input', {
             key: 'search',
@@ -640,8 +690,8 @@ window.__ModuleLoader__.load({
                 { key: 'empty', className: 'dsh-pm-empty' },
                 library.prompts.length === 0
                   ? t('panel.empty')
-                  : tab === 'fav' && query.trim() === ''
-                    ? t('panel.emptyFav')
+                  : tagFilter !== null && query.trim() === ''
+                    ? t('panel.emptyTag')
                     : t('panel.noMatch'),
               )
             : h(
@@ -667,24 +717,19 @@ window.__ModuleLoader__.load({
                       },
                     },
                     h(
-                      'button',
-                      {
-                        type: 'button',
-                        className: 'dsh-pm-star',
-                        'data-on': prompt.fav === true ? 'true' : 'false',
-                        'aria-pressed': prompt.fav === true ? 'true' : 'false',
-                        title: prompt.fav === true ? t('action.unfavorite') : t('action.favorite'),
-                        onClick: (event) => {
-                          event.stopPropagation();
-                          toggleFavorite(prompt.id);
-                        },
-                      },
-                      h(StarIcon, { filled: prompt.fav === true }),
-                    ),
-                    h(
                       'div',
                       { className: 'dsh-pm-row-main' },
-                      h('div', { className: 'dsh-pm-row-title' }, prompt.title),
+                      h(
+                        'div',
+                        { className: 'dsh-pm-row-head' },
+                        h('span', { className: 'dsh-pm-row-title' }, prompt.title),
+                        prompt.tags
+                          .slice(0, 2)
+                          .map((tag) => h('span', { key: `row-tag:${tag}`, className: 'dsh-pm-row-tag' }, tag)),
+                        prompt.tags.length > 2
+                          ? h('span', { className: 'dsh-pm-row-tag' }, `+${prompt.tags.length - 2}`)
+                          : null,
+                      ),
                       h('div', { className: 'dsh-pm-row-text' }, firstLine(prompt.text)),
                     ),
                     h(
@@ -698,7 +743,7 @@ window.__ModuleLoader__.load({
                           title: t('action.edit'),
                           onClick: (event) => {
                             event.stopPropagation();
-                            setEditing({ id: prompt.id, title: prompt.title, text: prompt.text });
+                            setEditing({ id: prompt.id, title: prompt.title, text: prompt.text, tags: prompt.tags });
                             setConfirmId(null);
                           },
                         },
@@ -806,13 +851,14 @@ window.__ModuleLoader__.load({
       const t = props.t;
       const [title, setTitle] = React.useState(props.value.title);
       const [text, setText] = React.useState(props.value.text);
+      const [tags, setTags] = React.useState((Array.isArray(props.value.tags) ? props.value.tags : []).join(', '));
       const [invalid, setInvalid] = React.useState(false);
       const save = () => {
         if (title.trim() === '' || text.trim() === '') {
           setInvalid(true);
           return;
         }
-        props.onSave({ id: props.value.id, title, text });
+        props.onSave({ id: props.value.id, title, text, tags });
       };
       return h(
         'div',
@@ -825,6 +871,15 @@ window.__ModuleLoader__.load({
           placeholder: t('form.namePlaceholder'),
           onChange: (event) => setTitle(event.target.value),
         }),
+        h('label', { htmlFor: 'dsh-pm-tags' }, t('form.tags')),
+        h('input', {
+          id: 'dsh-pm-tags',
+          className: 'dsh-pm-input',
+          value: tags,
+          placeholder: t('form.tagsPlaceholder'),
+          onChange: (event) => setTags(event.target.value),
+        }),
+        h('div', { className: 'dsh-pm-hint' }, t('form.tagsHint')),
         h('label', { htmlFor: 'dsh-pm-text' }, t('form.text')),
         h('textarea', {
           id: 'dsh-pm-text',
