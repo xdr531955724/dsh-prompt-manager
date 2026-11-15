@@ -346,7 +346,9 @@ window.__ModuleLoader__.load({
 .dsh-pm-row-line select{flex:1 1 auto;min-width:0}
 .dsh-pm-row-line input[type="checkbox"]{width:14px;height:14px;accent-color:var(--dsw-alias-brand-primary)}
 .dsh-pm-hint{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.dsh-pm-chips{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:2px 12px}
+.dsh-pm-chips{display:flex;flex-wrap:nowrap;align-items:center;gap:4px;padding:2px 12px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none;-ms-overflow-style:none;cursor:grab}
+.dsh-pm-chips::-webkit-scrollbar{height:0}
+.dsh-pm-chips[data-dragging="true"]{cursor:grabbing}
 .dsh-pm-chip{display:inline-flex;align-items:center;gap:5px;flex:none;max-width:150px;height:24px;padding:0 9px;border:0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.12));color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsh-pm-chip:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.22));color:var(--dsw-alias-label-primary)}
 .dsh-pm-chip[data-on="true"]{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-inverted,#fff);font-weight:600}
@@ -399,6 +401,9 @@ window.__ModuleLoader__.load({
       const buttonRef = React.useRef(null);
       const panelRef = React.useRef(null);
       const searchRef = React.useRef(null);
+      const chipsRef = React.useRef(null);
+      /** Drag-to-scroll state for the tag row; `moved` also swallows the click a drag fires. */
+      const chipsDrag = React.useRef({ active: false, startX: 0, startLeft: 0, moved: false });
 
       React.useEffect(() => {
         writeDocument(library);
@@ -465,6 +470,41 @@ window.__ModuleLoader__.load({
         if (node !== null && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest' });
       }, [open, active]);
 
+      /**
+       * A plain mouse wheel has no horizontal axis, so a wheel over the tag row is
+       * translated into scrollLeft. Bound natively and non-passively: React's
+       * onWheel cannot preventDefault, and without it the panel would scroll
+       * while the row stayed put.
+       */
+      React.useEffect(() => {
+        const node = chipsRef.current;
+        if (!open || node === null) return undefined;
+        const onWheel = (event) => {
+          const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+          if (delta === 0) return;
+          const max = node.scrollWidth - node.clientWidth;
+          if (max <= 0) return;
+          const next = Math.max(0, Math.min(max, node.scrollLeft + delta));
+          if (next === node.scrollLeft) return;
+          event.preventDefault();
+          node.scrollLeft = next;
+        };
+        node.addEventListener('wheel', onWheel, { passive: false });
+        return () => node.removeEventListener('wheel', onWheel);
+      }, [open, editing]);
+
+      /** A newly selected chip can sit past the right edge; nudge the row so it is visible. */
+      React.useEffect(() => {
+        const node = chipsRef.current;
+        if (!open || node === null) return;
+        const chip = node.querySelector('[data-on="true"]');
+        if (chip === null) return;
+        const box = node.getBoundingClientRect();
+        const rect = chip.getBoundingClientRect();
+        if (rect.left < box.left) node.scrollLeft -= box.left - rect.left + 8;
+        else if (rect.right > box.right) node.scrollLeft += rect.right - box.right + 8;
+      }, [open, editing, tagFilter]);
+
       const rows = React.useMemo(() => {
         const needle = query.trim().toLowerCase();
         const scoped =
@@ -529,6 +569,47 @@ window.__ModuleLoader__.load({
         setConfirmId(null);
         setQuery('');
         setActive(0);
+      };
+
+      /** Pointer drag across the tag row scrolls it, like a mobile tab strip. */
+      const onChipsPointerDown = (event) => {
+        const node = chipsRef.current;
+        if (node === null || event.pointerType !== 'mouse' || event.button !== 0) return;
+        chipsDrag.current = { active: true, startX: event.clientX, startLeft: node.scrollLeft, moved: false };
+      };
+
+      const onChipsPointerMove = (event) => {
+        const drag = chipsDrag.current;
+        const node = chipsRef.current;
+        if (!drag.active || node === null) return;
+        const dx = event.clientX - drag.startX;
+        // A few pixels of slop keeps ordinary clicks from being read as drags.
+        if (!drag.moved && Math.abs(dx) < 4) return;
+        if (!drag.moved) {
+          drag.moved = true;
+          node.setAttribute('data-dragging', 'true');
+          if (typeof node.setPointerCapture === 'function') node.setPointerCapture(event.pointerId);
+        }
+        node.scrollLeft = drag.startLeft - dx;
+      };
+
+      const onChipsPointerUp = (event) => {
+        const drag = chipsDrag.current;
+        const node = chipsRef.current;
+        drag.active = false;
+        if (!drag.moved || node === null) return;
+        node.removeAttribute('data-dragging');
+        if (typeof node.releasePointerCapture === 'function' && node.hasPointerCapture?.(event.pointerId) === true) {
+          node.releasePointerCapture(event.pointerId);
+        }
+      };
+
+      /** A drag ends with a click on whichever chip it started on; that click must not filter. */
+      const onChipsClickCapture = (event) => {
+        if (!chipsDrag.current.moved) return;
+        event.preventDefault();
+        event.stopPropagation();
+        chipsDrag.current.moved = false;
       };
 
       const savePrompt = (form) => {
@@ -619,7 +700,16 @@ window.__ModuleLoader__.load({
         body = [
           h(
             'div',
-            { key: 'chips', className: 'dsh-pm-chips' },
+            {
+              key: 'chips',
+              className: 'dsh-pm-chips',
+              ref: chipsRef,
+              onPointerDown: onChipsPointerDown,
+              onPointerMove: onChipsPointerMove,
+              onPointerUp: onChipsPointerUp,
+              onPointerCancel: onChipsPointerUp,
+              onClickCapture: onChipsClickCapture,
+            },
             h(
               'button',
               {

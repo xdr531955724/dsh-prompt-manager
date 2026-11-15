@@ -151,6 +151,17 @@ function collectPanel(tree) {
   return { rows, chips, rowTags, text: textOf(tree) };
 }
 
+/** @returns the plugin stylesheet text, so CSS-only behaviour can be asserted too. */
+function cssText(tree) {
+  let out = '';
+  walk(tree, (element) => {
+    if (element.props.id !== 'dsh-prompt-manager-style') return;
+    const html = element.props.dangerouslySetInnerHTML;
+    if (html && typeof html.__html === 'string') out = html.__html;
+  });
+  return out;
+}
+
 let failures = 0;
 const check = (label, condition, extra) => {
   if (condition) return;
@@ -184,6 +195,14 @@ const check = (label, condition, extra) => {
   check('A no untagged chip', !view.chips.some((chip) => chip.label.startsWith('未分组')), view.chips);
   check('A row tags rendered', view.rowTags.length === 4, view.rowTags);
   check('A first row highlighted', view.rows[0]?.active === 'true', view.rows.map((r) => r.active));
+
+  // The tag row must scroll sideways, not wrap into extra height.
+  const css = cssText(render({ 1: true }));
+  const chipsRule = /\.dsh-pm-chips\{([^}]*)\}/.exec(css)?.[1] ?? '';
+  check('A chips row scrolls x', chipsRule.includes('overflow-x:auto'), chipsRule);
+  check('A chips row does not wrap', chipsRule.includes('flex-wrap:nowrap') && !chipsRule.includes('flex-wrap:wrap'), chipsRule);
+  check('A chips drag cursor', css.includes('.dsh-pm-chips[data-dragging="true"]'), null);
+  check('A chips hidden scrollbar', css.includes('.dsh-pm-chips::-webkit-scrollbar'), null);
 }
 
 // --- B: tagged store, chip filtering, untagged bucket ----------------------------
